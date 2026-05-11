@@ -120,37 +120,17 @@ _POSTS_SCHEMA = {
 }
 
 
-def _build_tone_instruction(tone_aggressive: int, tone_blunt: bool) -> str:
-    if tone_aggressive <= 25:
-        aggr = "とても優しく包み込むようなトーンで書いてください。読者を責めず、寄り添い、温かく語りかけます。"
-    elif tone_aggressive <= 50:
-        aggr = "基本的に優しいトーンですが、核心部分では少し踏み込んだ表現を使います。"
-    elif tone_aggressive <= 75:
-        aggr = "読者の心に刺さる強めの表現を適度に使います。ただし攻撃的にはならず、愛のある厳しさです。"
-    else:
-        aggr = "読者の常識を揺さぶる挑発的なフックを使います。ただし人格攻撃は絶対にしません。構造や常識への挑戦です。"
-
-    if tone_blunt:
-        blunt = "伝えたいことはグサッとストレートに言い切ります。遠回しにせず、核心を突く一文を必ず入れてください。"
-    else:
-        blunt = "伝えたいことは比喩やストーリーで柔らかく包んで伝えます。直接的な表現は避け、読者が自分で気づくように導きます。"
-
-    return f"【トーン指定】\n{aggr}\n{blunt}\n"
-
-
 def generate_5posts(
     concept: str,
     persona: str,
     field: str,
     research: dict,
-    tone_aggressive: int = 30,
-    tone_blunt: bool = False,
-    writer_style: str = "",
     api_key: str = "",
     author_identity: str = "",
     author_pain: str = "",
     cta_label: str = "",
     cta_slot: str = "夜",
+    selected_angle: dict | None = None,
 ) -> dict:
     """5投稿（H→A→C→E→K）を1コールで生成する。
 
@@ -165,6 +145,8 @@ def generate_5posts(
     client = genai.Client(api_key=api_key)
     knowledge = load_knowledge()
     one_hack = knowledge.get("ONE_HACK_model", "")
+    hook_template = knowledge.get("hook_template", "")
+    copy_principles = knowledge.get("copywriting_principles", "")
 
     evidence_text = ""
     for i, ev in enumerate(research.get("evidence", []), 1):
@@ -174,10 +156,21 @@ def generate_5posts(
     for eq in research.get("expert_quotes", []):
         expert_text += f"- {eq.get('expert', '')}: 「{eq.get('quote', '')}」({eq.get('context', '')})\n"
 
-    tone_instruction = _build_tone_instruction(tone_aggressive, tone_blunt)
-    style_instruction = (
-        f"【参考にする文体】\n{writer_style}のような文体で書く。\n" if writer_style else ""
-    )
+    style_instruction = ""
+
+    # 角度ブロック(ユーザーが選んだ角度を最上位制約として注入)
+    angle_block = ""
+    if selected_angle:
+        angle_block = f"""【★★★ 今日の角度(ユーザーが選択) — 最優先で反映 ★★★】
+タイトル: {selected_angle.get('title', '')}
+コア気づき: {selected_angle.get('core_insight', '')}
+使う権威ヒント(body の中で砕いて出す): {selected_angle.get('key_authority_hint', '')}
+痛みの瞬間: {selected_angle.get('target_pain_specific', '')}
+
+★5投稿すべて、この角度の延長線上で書く。
+★body 内で「使う権威ヒント」を、4歳の子に説明するように砕いた語り口で出す。
+★hook には絶対に人物名・著作名・学者名・専門用語を入れない。逆説と痛みの瞬間だけ。
+"""
 
     author_instruction = ""
     if author_identity or author_pain:
@@ -207,12 +200,18 @@ def generate_5posts(
     )
 
     system_prompt = f"""あなたはThreadsコールドトラフィック向けのトッププロコピーライターです。
-1日のテーマから朝/午前/昼/午後/夜の5投稿を一括生成します。
+ターゲット(何に悩んでいる、どんな人?)から朝/午前/昼/午後/夜の5投稿を一括生成します。
 
-【ONE HACKモデル — このルールを厳守】
+【★最優先 hook設計テンプレート — 必ず参照】
+{hook_template}
+
+【★最優先 コピーライティング原則(ダメvs良い)— 必ず参照】
+{copy_principles}
+
+【ONE HACKモデル(5投稿の流れの参考)】
 {one_hack}
 
-{tone_instruction}
+{angle_block}
 {style_instruction}
 {author_instruction}
 {cta_instruction}
@@ -241,24 +240,45 @@ def generate_5posts(
 - 「あなたは…」と直接呼びかける
 - 「私も同じだった」「分かる」と感じてもらえる温度感
 
-【絶対ルール (構造)】
+【★★★ hookの絶対ルール ★★★】
+- 全ての hook は `hook_template.md` の **3型のどれかに必ず当てはまる**:
+  - 型A: 権威の暴露構文 (Tier 1/2 の権威 + 痛みの瞬間 + セリフ)
+  - 型B: 観察→反証→問いかけ構文 (Tier 3 業界用語 + 観察 + 前提疑い + 問いかけ)
+  - 型C: 概念逆説構文 (Tier 3 業界用語 + 一般理解 + 逆の罠)
+
+- **権威性は必須**: 以下3層のどれか1つは必ず使う
+  - Tier 1: 人物の固有名 × 著作/論文名 (例: 「[人物名]が『[著作名]』で暴いた」)
+  - Tier 2: 大学・機関名 + 年数 + 研究タイプ (例: 「ハーバード大学の80年追跡研究で」)
+  - Tier 3: 業界内で確立された専門用語 そのもの (例: 「『メンタルブロック』」「『LP』」「『アタッチメント』」「『メイラード反応』」など、その業界の人が「これは業界の言葉」と認識する固有名詞)
+
+- **権威の偽装は即ボツ**: 「海外の心理学者」「ある研究では」「専門家によると」のような**固有名のない権威呼称は禁止**。具体的な人物名・機関名・業界用語が必要。
+
+- ターゲットの分野に合わせて適切なジャンルの権威を選ぶ(育児なら育児系、経営なら経営系、心理なら心理系)。ジャンル違いの権威を持ち込まない。
+
+【★★★ hookの禁止リスト(逐語・即ボツ条件) ★★★】
+- 詩・ポエム導入: 「そっと目を閉じるあなたへ」「一日を終え、〜あなたへ」
+- お経調まとめ: 「○○することで解決できます」「○○を整えることで」「○○することが大切」
+- 予言・スピ調: 「○○は目覚めます」「内側から変わります」「引き寄せられます」
+- 指示形: 「○○してみませんか?」「○○してみてください」「○○しましょう」「試してみませんか?」
+- 抽象概念オンパレード: 「内なる豊かさ」「自己価値」「心の状態」「受け取り体質」「健全な循環」「真のギバー」「偽りの自己」
+- 長い文学的比喩: 1段落使う物語型比喩(「森の中の旅人と賢者」みたいな)
+
+【絶対ルール (本文 body)】
 1. 各投稿は500字以内(hook+body合計)。超過厳禁
 2. 各投稿は冒頭フック必須(独立して読まれるため)
-3. hook の構造:
-   - 朝(H): ターゲットの**ある1日のリアルな場面**から入るのが基本。権威引用は使ってもいいが**短く・分かりやすく**
-   - 午前(A): 「あなたのせいじゃない」を**柔らかい言葉**で
-   - 昼(C): 新事実を**驚くほど短い1文**で言い切る
-   - 午後(E): 別角度の**具体例・あるある**で再提示
-   - 夜(K): 問いかけ or 小さな1歩 or プロフィール誘導
+3. 中学生でもスッと読めるレベル / 1文40字以内目安
 4. 5投稿全体でRule of One貫通(ターゲット/アイデア/エモーション/ミステリー/アクションは全て1つ)
 5. 海外権威・研究の引用は、**引用したらすぐ次の文で日常語に翻訳**する。引用しっぱなし禁止
-   例: ×「アダム・グラントの研究が示すように、成功するギバーは戦略的なアプローチを取ります」
-       ○「アダム・グラントって学者がね、面白いこと言ってる。
-         『うまくいく人ほど、自分のことも大事にしてる』って」
+   × 「アダム・グラントの研究が示すように、成功するギバーは戦略的なアプローチを取ります」
+   ○ 「アダム・グラントって学者がいてね。/ 『うまくいく人ほど、自分のことも大事にしてる』って言ってる」
 6. 主語のねじれ厳禁
 7. 自動投稿バレ表現禁止(「さっき見ました」等の時間表現/事実でないこと)
 8. 解決策出し惜しみ禁止(「答えはnoteに」だけで終わるNG)
 9. ペルソナの職業名・属性をそのまま本文に登場させる(汎用語に丸めない)
+10. **ターゲットが頭の中でつぶやくセリフを「」で1〜2個入れる**
+11. **ターゲットの1日のリアルな場面(Zoom切った後 / LINE送信前 / 玄関で / 値段を口に出した瞬間 など)を1個は入れる**
+12. **共感ファースト**: 「あなたは○○な人」と1行で名指しし、「分かる」「私も同じだった」の温度感を持たせる
+13. 締めは指示形NG。問いかけ or 寄り添いの余白で終わる
 10. design_reason には『何を意識してこの文を書いたか』を一般コピーライティングの観点で4〜6文で詳しく書く。
     含めるべき要素:
     - 使ったフレームワークまたは原則 (PASONA / PASTOR / PASBECONA / AIDA / 4U / WIIFM / Rule of One / 1人に向けて書く / 具体性の力 / ベネフィット vs 機能 / 感情訴求と論理訴求 / 損失回避 / ヘッドライン原則 など。なるべく一般用語で説明する)
@@ -349,27 +369,31 @@ def regenerate_single_post(
     field: str,
     research: dict,
     shared_context: dict,
-    tone_aggressive: int = 30,
-    tone_blunt: bool = False,
-    writer_style: str = "",
     api_key: str = "",
     author_identity: str = "",
     author_pain: str = "",
     cta_label: str = "",
+    revision_request: str = "",
+    previous_post: dict | None = None,
 ) -> dict:
-    """1スロットだけ再生成する（残り4投稿との整合性を保つ）。"""
+    """1スロットだけ再生成する（残り4投稿との整合性を保つ）。
+
+    revision_request: ユーザーが具体的に「どこをどう直したいか」を入れた文。
+                      入っていれば、新版はこの指示に必ず従わなければならない。
+    previous_post:    直す対象の旧版投稿(hook/body/design_reason 等)。
+                      指示と一緒にプロンプトに渡し「この旧版を踏まえて直す」よう指示する。
+    """
     client = genai.Client(api_key=api_key)
     knowledge = load_knowledge()
     one_hack = knowledge.get("ONE_HACK_model", "")
+    hook_template = knowledge.get("hook_template", "")
+    copy_principles = knowledge.get("copywriting_principles", "")
 
     target_slot = next((s for s in SLOT_DEFINITIONS if s["slot"] == slot), None)
     if not target_slot:
         raise ValueError(f"不明なスロット: {slot}")
 
-    tone_instruction = _build_tone_instruction(tone_aggressive, tone_blunt)
-    style_instruction = (
-        f"【参考にする文体】\n{writer_style}のような文体で書く。\n" if writer_style else ""
-    )
+    style_instruction = ""
 
     author_instruction = ""
     if author_identity or author_pain:
@@ -405,20 +429,53 @@ def regenerate_single_post(
         "required": ["slot", "stage", "hook", "body", "char_count", "design_reason"],
     }
 
+    # 旧版+修正指示ブロック
+    previous_block = ""
+    if previous_post:
+        previous_block = f"""【★この投稿の旧版(これを直す対象) ★】
+hook(旧):
+{previous_post.get('hook', '')}
+
+body(旧):
+{previous_post.get('body', '')}
+
+design_reason(旧):
+{previous_post.get('design_reason', '')}
+"""
+    revision_block = ""
+    if revision_request and revision_request.strip():
+        revision_block = f"""
+【★★★ ユーザー修正指示 — 最優先で必ず反映 ★★★】
+以下の指示はユーザーから直接出た要望です。**何を差し置いても最優先で従ってください**。
+他のルールよりも優先します。指示を無視した出力は即ボツ。
+
+----------
+{revision_request.strip()}
+----------
+
+★この指示を新版で必ず実行してください。
+★指示が指定する点について「変えなかった」「忘れた」「他のルールがあるので守れなかった」は許されません。
+★指示が「○○という言葉を使うな」なら使わない。「もっと短く」なら短くする。「具体的に」なら具体的にする。
+"""
+
     prompt = f"""あなたはThreadsコールドトラフィック向けのプロコピーライターです。
 すでに生成済みの5投稿のうち、{slot}枠（{target_slot['stage']} {target_slot['stage_name']}）だけを再生成します。
 残り4投稿との整合性（同じターゲット・同じアイデア・同じミステリー）を保つこと。
 
+{previous_block}
+{revision_block}
+
 【ONE HACKモデル】
 {one_hack}
 
-{tone_instruction}
 {style_instruction}
 {author_instruction}
 {cta_instruction}
 
-【コンセプト】{concept}
-【ペルソナ】{persona}
+【ターゲット — 何に悩んでいる、どんな人?】
+{persona}
+
+【参考: コンセプト(=同上)】{concept}
 【分野】{field}
 
 【1日全体の Rule of One（既存の他4投稿と同じものを使う）】

@@ -2,7 +2,7 @@
 Threads 5投稿ライターツール — Streamlit UI
 
 1日のテーマ → 5投稿（H→A→C→E→K）一括生成 → コピー → Threadsに貼り付け
-学習モードでコピーライティングクイズも出題(5問・初級/中級/上級)。一般原則(PASONA/PASTOR/PASBECONA/4U/WIIFM)+ 用語(LP/CTA/Hook/DRM/ONE HACKモデル)を学べる。
+リサーチ→5つの角度から1つ選択→その角度で5投稿を生成。
 全てGemini Flash（無料枠）で動作。
 """
 
@@ -69,6 +69,8 @@ def _init_state():
         "step": 1,
         "research": None,
         "posts_result": None,
+        "angles": None,
+        "selected_angle": None,
         "quiz_set": None,
         "quiz_answers": {},
         "field": "心理学",
@@ -78,9 +80,6 @@ def _init_state():
         "persona": "",
         "cta_label": "",
         "cta_slot": "夜",
-        "tone_aggressive": 30,
-        "tone_blunt": False,
-        "writer_style": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -129,8 +128,8 @@ with st.expander("📖 はじめての方へ｜このツールの使い方", exp
 - ✅ 朝/午前/昼/午後/夜の5投稿を1日のストーリーで一括生成
 - ✅ 各投稿500字以内・テキストのみ（画像なし＝シャドウバン回避）
 - ✅ 各投稿の「**何を意識して書いたか**」を一般コピーライティング観点で詳しく解説(学習機能)
-- ✅ 学習モードONでコピーライティングクイズ(5問・初級/中級/上級)。
-  PASONA / PASTOR / PASBECONA / 4U / WIIFM、用語(LP / CTA / Hook / DRM / ONE HACK モデル) を学べる
+- ✅ リサーチ後に5つの角度を提案 → 1つ選んでから生成(被り防止)
+- ✅ 生成と同時にコピーライティング学習クイズ(5問)で PASONA / PASTOR / PASBECONA / 4U / WIIFM・用語(LP・CTA・Hook・DRM・ONE HACKモデル)を学べる
 - ✅ プロフィール＋ターゲットをJSON保存→次回読み込みで一発復元
 
 ---
@@ -152,14 +151,15 @@ with st.expander("📖 はじめての方へ｜このツールの使い方", exp
 ### ⚠️ API消費の目安
 - リサーチ ON: 1コール(任意)
 - 5投稿生成: 1コール
-- クイズAI生成 ON: 1コール(任意・5問のうち2問がAI生成)
+- 角度提案: 1コール
+- クイズ生成: 1コール(5問のうち2問はAI生成、残り3問は固定プール)
 → フル機能で **3コール / 1日**
 """)
 
 
 # --- ステップインジケーター ---
-steps = ["① 入力", "② 5投稿＋クイズ"]
-cols = st.columns(2)
+steps = ["① 入力", "② 角度を選ぶ", "③ 5投稿生成"]
+cols = st.columns(3)
 for i, (col, label) in enumerate(zip(cols, steps), 1):
     if i < st.session_state.step:
         col.markdown(f'<div class="step step-done">{label} ✓</div>', unsafe_allow_html=True)
@@ -219,7 +219,7 @@ with st.sidebar:
     st.caption("コピーライティングの Rule of One 原則で5投稿を貫く構成")
 
     if st.button("最初からやり直す", use_container_width=True):
-        for k in ["step", "research", "posts_result", "quiz_set", "quiz_answers"]:
+        for k in ["step", "research", "posts_result", "angles", "selected_angle", "quiz_set", "quiz_answers"]:
             if k in st.session_state:
                 del st.session_state[k]
         _init_state()
@@ -299,56 +299,6 @@ if st.session_state.step == 1:
             help="夜（K Key）が最有力",
         )
 
-    # --- トーン ---
-    st.subheader("トーン設定")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.session_state.tone_aggressive = st.slider(
-            "トーン",
-            min_value=0, max_value=100, value=st.session_state.tone_aggressive,
-            help="0: とても優しい ← → 100: 挑発的",
-        )
-        v = st.session_state.tone_aggressive
-        if v <= 25:
-            st.caption("🕊️ とても優しく包み込むトーン")
-        elif v <= 50:
-            st.caption("😊 基本優しく、核心では少し踏み込む")
-        elif v <= 75:
-            st.caption("💪 愛のある厳しさ")
-        else:
-            st.caption("🔥 常識を揺さぶる挑発的フック")
-    with col2:
-        blunt_choice = st.radio(
-            "伝え方",
-            options=["柔らかく包む", "グサッと言い切る"],
-            index=1 if st.session_state.tone_blunt else 0,
-        )
-        st.session_state.tone_blunt = (blunt_choice == "グサッと言い切る")
-
-    st.session_state.writer_style = st.text_input(
-        "参考にしたいライタースタイル（任意）",
-        value=st.session_state.writer_style,
-        placeholder="例: メンタリストDaiGo、岡本太郎、村上春樹",
-    )
-
-    st.divider()
-
-    # --- 学習モード ---
-    st.subheader("📚 学習モード(コピーライティングクイズ)")
-    use_quiz = st.checkbox(
-        "5投稿生成と同時にクイズも出す(5問)",
-        value=True,
-        help="一般コピーライティング(PASONA / PASTOR / PASBECONA / 4U / WIIFM など) と用語(LP/CTA/Hook/DRM/ONE HACK)を学べます。AI問題2問でAPIを+1回消費",
-    )
-    quiz_difficulty = st.radio(
-        "難易度",
-        options=["beginner", "intermediate", "advanced"],
-        format_func=lambda x: {"beginner": "初級(用語・基本)", "intermediate": "中級(応用)", "advanced": "上級(本質)"}[x],
-        index=0,
-        horizontal=True,
-        disabled=not use_quiz,
-    )
-
     st.divider()
 
     # --- リサーチON/OFF ---
@@ -389,33 +339,19 @@ if st.session_state.step == 1:
                 else:
                     st.session_state.research = {"evidence": [], "expert_quotes": []}
 
-                # 5投稿生成
-                with st.spinner("5投稿を生成中..."):
-                    posts_result = generate_5posts(
+                # 角度提案(リサーチ素材から5案)
+                from src.angle_proposer import propose_angles
+                with st.spinner("リサーチ素材から5つの角度を提案中..."):
+                    st.session_state.angles = propose_angles(
                         concept=st.session_state.concept,
                         persona=st.session_state.persona,
                         field=st.session_state.field,
-                        research=st.session_state.research,
-                        tone_aggressive=st.session_state.tone_aggressive,
-                        tone_blunt=st.session_state.tone_blunt,
-                        writer_style=st.session_state.writer_style,
-                        api_key=api_key,
                         author_identity=st.session_state.author_identity,
                         author_pain=st.session_state.author_pain,
-                        cta_label=st.session_state.cta_label,
-                        cta_slot=st.session_state.cta_slot,
+                        research=st.session_state.research or {},
+                        api_key=api_key,
+                        n=5,
                     )
-                    st.session_state.posts_result = posts_result
-
-                # クイズ
-                if use_quiz:
-                    with st.spinner("クイズを準備中..."):
-                        st.session_state.quiz_set = build_quiz_set(
-                            posts_result, quiz_difficulty, api_key, use_ai=True
-                        )
-                        st.session_state.quiz_answers = {}
-                else:
-                    st.session_state.quiz_set = None
 
                 st.session_state.step = 2
                 st.rerun()
@@ -424,9 +360,78 @@ if st.session_state.step == 1:
 
 
 # ========================================
-# STEP 2: 5投稿表示 + クイズ
+# STEP 2: 角度を選ぶ
 # ========================================
 elif st.session_state.step == 2:
+    angles = st.session_state.angles or []
+    if not angles:
+        st.error("角度の提案がありません。最初からやり直してください。")
+        if st.button("最初に戻る"):
+            st.session_state.step = 1
+            st.rerun()
+        st.stop()
+
+    st.subheader("② 今日の角度を選んでください")
+    st.caption("同じターゲットでも、毎回違う角度で書けば被りません。気になる切り口を1つ選んでください。")
+
+    choice_idx = st.radio(
+        "角度",
+        options=list(range(len(angles))),
+        format_func=lambda i: f"案{i+1}: {angles[i].get('title', '')}",
+        key="angle_choice",
+    )
+    chosen = angles[choice_idx]
+
+    with st.container(border=True):
+        st.markdown(f"### {chosen.get('title', '')}")
+        st.markdown(f"**コア気づき**: {chosen.get('core_insight', '')}")
+        st.markdown(f"**使う権威ヒント**: {chosen.get('key_authority_hint', '')}")
+        st.markdown(f"**痛みの瞬間**: {chosen.get('target_pain_specific', '')}")
+
+    col_a, col_b = st.columns([1, 1])
+    if col_a.button("← 入力に戻る", use_container_width=True):
+        st.session_state.step = 1
+        st.rerun()
+    if col_b.button("この角度で5投稿を生成 →", use_container_width=True, type="primary"):
+        st.session_state.selected_angle = chosen
+        try:
+            with st.spinner("5投稿を生成中..."):
+                posts_result = generate_5posts(
+                    concept=st.session_state.concept,
+                    persona=st.session_state.persona,
+                    field=st.session_state.field,
+                    research=st.session_state.research or {},
+                    api_key=st.session_state.get("_api_key", ""),
+                    author_identity=st.session_state.author_identity,
+                    author_pain=st.session_state.author_pain,
+                    cta_label=st.session_state.cta_label,
+                    cta_slot=st.session_state.cta_slot,
+                    selected_angle=chosen,
+                )
+                st.session_state.posts_result = posts_result
+            # クイズ生成(任意・失敗してもメイン処理は続行)
+            try:
+                with st.spinner("コピーライティングクイズを準備中..."):
+                    st.session_state.quiz_set = build_quiz_set(
+                        posts_result,
+                        difficulty="beginner",
+                        api_key=st.session_state.get("_api_key", ""),
+                        use_ai=True,
+                        total=5,
+                    )
+                    st.session_state.quiz_answers = {}
+            except Exception:
+                st.session_state.quiz_set = None
+            st.session_state.step = 3
+            st.rerun()
+        except Exception as e:
+            show_friendly_error(e, "生成")
+
+
+# ========================================
+# STEP 3: 5投稿表示
+# ========================================
+elif st.session_state.step == 3:
     posts_result = st.session_state.posts_result
     if not posts_result:
         st.error("生成結果がありません。最初からやり直してください。")
@@ -457,17 +462,17 @@ elif st.session_state.step == 2:
         with st.container(border=True):
             st.markdown(f"### {slot}（{time}） — **{stage} {stage_name}**")
 
-            # 編集可能エリア
+            # 編集可能エリア(生成結果は全部見えるサイズで)
             hook = st.text_area(
-                "Hook（冒頭フック）",
+                "Hook(冒頭フック)",
                 value=post.get("hook", ""),
-                height=80,
+                height=180,
                 key=f"hook_{idx}",
             )
             body = st.text_area(
-                "Body（本文）",
+                "Body(本文)",
                 value=post.get("body", ""),
-                height=200,
+                height=400,
                 key=f"body_{idx}",
             )
             full_text = (hook + body).strip()
@@ -482,11 +487,11 @@ elif st.session_state.step == 2:
                 cls = "char-over"
             st.markdown(f'<span class="{cls}">文字数: {char_count} / 500</span>', unsafe_allow_html=True)
 
-            # コピー用テキストエリア
+            # コピー用テキストエリア(全部見える高さ)
             st.text_area(
-                "📋 コピー用（hook + body 連結）",
+                "📋 コピー用(hook + body 連結)",
                 value=hook + "\n\n" + body,
-                height=120,
+                height=350,
                 key=f"copy_{idx}",
                 help="右上のコピーボタンでコピーしてThreadsに貼り付け",
             )
@@ -505,32 +510,40 @@ elif st.session_state.step == 2:
                     st.markdown(f"- **Key 誘導先**：{post.get('key_direction')}")
                 st.markdown(f"- **CTA挿入**：{'あり' if post.get('has_cta') else 'なし'}")
 
-            # 個別再生成ボタン
-            col1, col2 = st.columns([3, 1])
-            with col2:
-                if st.button("🔄 この投稿だけ再生成", key=f"regen_{idx}"):
-                    with st.spinner(f"{slot}枠を再生成中..."):
-                        try:
-                            new_post = regenerate_single_post(
-                                slot=slot,
-                                concept=st.session_state.concept,
-                                persona=st.session_state.persona,
-                                field=st.session_state.field,
-                                research=st.session_state.research or {},
-                                shared_context=posts_result,
-                                tone_aggressive=st.session_state.tone_aggressive,
-                                tone_blunt=st.session_state.tone_blunt,
-                                writer_style=st.session_state.writer_style,
-                                api_key=st.session_state.get("_api_key", ""),
-                                author_identity=st.session_state.author_identity,
-                                author_pain=st.session_state.author_pain,
-                                cta_label=st.session_state.cta_label if slot == st.session_state.cta_slot else "",
-                            )
-                            posts_result["posts"][idx] = {**post, **new_post}
-                            st.session_state.posts_result = posts_result
-                            st.rerun()
-                        except Exception as e:
-                            show_friendly_error(e, "再生成")
+            # 個別再生成 — 修正指示を入れて再生成できる
+            st.markdown("---")
+            st.markdown("**🔄 この投稿を直したいとき**")
+            revision_request = st.text_area(
+                "どこをどう直したいか具体的に書いてください(空でもOK)",
+                key=f"revision_{idx}",
+                placeholder=(
+                    "例: hookが固いのでもっと短くして / 「○○」という言葉を使わないで / "
+                    "もっと具体的な場面を入れて / セリフを変えて / 専門用語を日常語に置き換えて"
+                ),
+                height=80,
+            )
+            if st.button("この投稿を再生成", key=f"regen_{idx}", type="primary"):
+                with st.spinner(f"{slot}枠を再生成中..."):
+                    try:
+                        new_post = regenerate_single_post(
+                            slot=slot,
+                            concept=st.session_state.concept,
+                            persona=st.session_state.persona,
+                            field=st.session_state.field,
+                            research=st.session_state.research or {},
+                            shared_context=posts_result,
+                            api_key=st.session_state.get("_api_key", ""),
+                            author_identity=st.session_state.author_identity,
+                            author_pain=st.session_state.author_pain,
+                            cta_label=st.session_state.cta_label if slot == st.session_state.cta_slot else "",
+                            revision_request=revision_request,
+                            previous_post=post,
+                        )
+                        posts_result["posts"][idx] = {**post, **new_post}
+                        st.session_state.posts_result = posts_result
+                        st.rerun()
+                    except Exception as e:
+                        show_friendly_error(e, "再生成")
 
     st.divider()
 
@@ -552,16 +565,16 @@ elif st.session_state.step == 2:
     )
 
     # ============================
-    # クイズ
+    # コピーライティング学習クイズ(5問)
     # ============================
     if st.session_state.quiz_set:
         st.divider()
         st.header("📚 コピーライティング学習クイズ(5問)")
-        st.caption("生成された5投稿と、PASONA・PASTOR・PASBECONA・4U・WIIFM などの一般原則 + 用語(LP・CTA・Hook・DRM・ONE HACKモデル)を学びましょう")
+        st.caption("生成された5投稿を題材に、PASONA・PASTOR・PASBECONA・4U・WIIFM などの一般原則 + 用語(LP・CTA・Hook・DRM・ONE HACKモデル)を学べます")
 
         for q_idx, q in enumerate(st.session_state.quiz_set):
             with st.container(border=True):
-                st.markdown(f"### Q{q_idx + 1}（{q.get('category', '')}）")
+                st.markdown(f"### Q{q_idx + 1} ({q.get('category', '')})")
                 st.markdown(q.get("question", ""))
 
                 options = q.get("options", [])
@@ -579,15 +592,19 @@ elif st.session_state.step == 2:
                     st.session_state.quiz_answers[q_idx] = user_choice
 
                 if q_idx in st.session_state.quiz_answers:
-                    chosen = st.session_state.quiz_answers[q_idx]
-                    if chosen == answer_index:
-                        st.success(f"✅ 正解！ {['①','②','③','④'][answer_index]} {options[answer_index]}")
+                    chosen_idx = st.session_state.quiz_answers[q_idx]
+                    if chosen_idx == answer_index:
+                        st.success(f"✅ 正解! {['①','②','③','④'][answer_index]} {options[answer_index]}")
                     else:
                         st.error(f"❌ 不正解。正解は {['①','②','③','④'][answer_index]} {options[answer_index]}")
-                    st.info(f"💡 解説：{q.get('explanation', '')}")
+                    st.info(f"💡 解説: {q.get('explanation', '')}")
 
     st.divider()
 
-    if st.button("← 入力に戻る", use_container_width=True):
+    col_a, col_b = st.columns(2)
+    if col_a.button("← 別の角度を選び直す", use_container_width=True):
+        st.session_state.step = 2
+        st.rerun()
+    if col_b.button("← 入力に戻る", use_container_width=True):
         st.session_state.step = 1
         st.rerun()

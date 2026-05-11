@@ -18,9 +18,6 @@ PROFILE_KEYS = [
     "persona",
     "cta_label",
     "cta_slot",
-    "tone_aggressive",
-    "tone_blunt",
-    "writer_style",
 ]
 
 
