@@ -12,6 +12,8 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
+from .llm_client import generate_with_fallback
+
 
 _ANGLE_SCHEMA = {
     "type": "object",
@@ -99,8 +101,8 @@ def propose_angles(
 """
 
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
+    response = generate_with_fallback(
+        client,
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0.95,

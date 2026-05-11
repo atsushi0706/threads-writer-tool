@@ -12,6 +12,8 @@ import re
 from google import genai
 from google.genai import types
 
+from .llm_client import generate_with_fallback
+
 
 GENRE_INSTRUCTIONS = {
     "psychology": {
@@ -99,8 +101,8 @@ def research_topic(concept: str, persona: str, api_key: str, genre: str = "psych
 ```
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
+    response = generate_with_fallback(
+        client,
         contents=prompt,
         config=types.GenerateContentConfig(
             tools=[types.Tool(google_search=types.GoogleSearch())],

@@ -14,6 +14,8 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
+from .llm_client import generate_with_fallback
+
 QUIZ_POOL_PATH = Path(__file__).parent.parent / "data" / "quiz_pool.json"
 
 
@@ -160,8 +162,8 @@ def generate_ai_questions(
 {n}問を JSON 配列で返す。各問は id/category/question/options(4)/answer_index(0-3)/explanation を持つ。
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
+    response = generate_with_fallback(
+        client,
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0.7,

@@ -14,6 +14,8 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
+from .llm_client import generate_with_fallback
+
 KNOWLEDGE_DIR = Path(__file__).parent.parent / "knowledge"
 
 
@@ -328,8 +330,8 @@ shared_one_target/idea/emotion/mystery/action と、5投稿（朝→午前→昼
 - design_reason（なぜこの構成にしたかの2〜3文の解説）
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
+    response = generate_with_fallback(
+        client,
         contents=system_prompt + "\n\n" + user_prompt,
         config=types.GenerateContentConfig(
             temperature=0.85,
@@ -508,8 +510,8 @@ design_reason(旧):
   hook で何を仕掛け、本文でどう感情を動かし、なぜこの具体描写と順序を選んだかを学習用に書く。
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
+    response = generate_with_fallback(
+        client,
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0.9,
