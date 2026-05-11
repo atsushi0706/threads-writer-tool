@@ -541,6 +541,11 @@ elif st.session_state.step == 3:
                         )
                         posts_result["posts"][idx] = {**post, **new_post}
                         st.session_state.posts_result = posts_result
+                        # text_area は key が同じだと古い値を保持してしまうので、
+                        # 該当slotのwidget state を削除して強制再初期化させる
+                        for k in [f"hook_{idx}", f"body_{idx}", f"copy_{idx}", f"revision_{idx}"]:
+                            if k in st.session_state:
+                                del st.session_state[k]
                         st.rerun()
                     except Exception as e:
                         show_friendly_error(e, "再生成")
