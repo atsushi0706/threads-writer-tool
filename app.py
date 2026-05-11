@@ -93,15 +93,32 @@ _init_state()
 st.markdown('<div class="big-title">🧵 Threads 5投稿ライター</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">ターゲット(何に悩んでいる、どんな人?) → 朝/午前/昼/午後/夜の5投稿を一括生成</div>', unsafe_allow_html=True)
 
-with st.expander("📖 はじめての方へ｜このツールの使い方", expanded=False):
+with st.expander("📖 はじめての方へ｜このツールの使い方", expanded=True):
     st.markdown("""
 ### 🚨 まずやること
 
 **左サイドバーに「Gemini API Key」を貼り付けてください。**
 
-- API Keyとは: AIに話しかけるための鍵（Googleアカウントがあれば無料）
+- API Keyとは: AIに話しかけるための鍵(Googleアカウントがあれば無料)
 - クレジットカード登録 **不要**
-- 取得手順 → [Google AI Studio](https://aistudio.google.com/apikey)
+- 所要時間: **約2分**
+
+---
+
+### 🔑 Gemini APIキー取得手順(画像なし・5ステップ)
+
+1. **[Google AI Studio (https://aistudio.google.com/apikey)](https://aistudio.google.com/apikey) を開く**
+   → Googleアカウント(Gmail等)でログイン
+2. 右上の **「Create API key」** ボタンをクリック
+3. プロジェクトを選択(無ければ「Create API key in new project」)
+4. 表示された **`AIzaSy...` で始まる文字列をコピー**
+5. このアプリの **左サイドバーの「Gemini API Key」欄に貼り付け** → 完了
+
+🖼️ **画像付きの詳しい手順はこちら →**
+[GitHub: 画像付きAPIキー取得ガイド](https://github.com/atsushi0706/threads-writer-tool/blob/master/docs/GEMINI_API_KEY_GUIDE.md)
+
+> ⚠️ クレジットカード登録は **完全に不要**。
+> 1日1,500リクエストまで無料で使えます(このツールはフル機能で1日3リクエストなので余裕)。
 
 ---
 
@@ -161,10 +178,14 @@ with st.sidebar:
         "Gemini API Key",
         type="password",
         value=DEFAULT_API_KEY,
-        help="Google AI Studio (aistudio.google.com) で無料取得。.envにGEMINI_API_KEYを置けば自動入力",
+        help="Google AI Studio で無料取得(クレカ不要・所要約2分)。.env に GEMINI_API_KEY を置けば自動入力。",
     )
     if not api_key:
-        st.info("Gemini API Keyを入力してください。\n\n[Google AI Studio](https://aistudio.google.com/apikey) で無料取得。")
+        st.info(
+            "🔑 **Gemini API Key が必要です**\n\n"
+            "**[👉 Google AI Studio で発行する(無料)](https://aistudio.google.com/apikey)**\n\n"
+            "詳しい手順: [画像付きガイド](https://github.com/atsushi0706/threads-writer-tool/blob/master/docs/GEMINI_API_KEY_GUIDE.md)"
+        )
     elif DEFAULT_API_KEY and api_key == DEFAULT_API_KEY:
         st.success("✅ .env から自動入力済み")
     if api_key:
